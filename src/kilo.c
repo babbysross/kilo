@@ -1,3 +1,5 @@
+/* Kilo - a simple text editor from snaptoken's tutorial */
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -5,11 +7,21 @@
 #include <termios.h>
 #include <unistd.h>
 
-/* Kilo - a simple text editor from snaptoken's tutorial */
+/* Defines */
+
+#define KILO_VERSION "0.0.1"
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+/* Data */
 
 struct termios orig_termios;
 
+/* Terminal */
+
 void die(const char *s) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
     perror(s);
     exit(1);
 }
@@ -36,20 +48,56 @@ void enableRawMode() {
         die("tcsetattr");
 }
 
-/* Main function */
+char editorReadKey () {
+    int nread;
+    char c;
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1 && errno != EAGAIN)
+            die("read");
+    }
+    return c;
+}
+
+/* Output */
+
+void editorDrawRows() {
+    int y;
+    for (y = 0; y < 24; y++) {
+        write(STDOUT_FILENO, "~\r\n", 3);
+    }
+}
+
+void editorRefreshScreen() {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    editorDrawRows();
+
+    write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+/* Input */
+
+void editorProcessKeypress() {
+    char c = editorReadKey();
+
+    switch (c) {
+        case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
+    }
+}
+
+/* Initialize*/
 
 int main() {
     enableRawMode();
     while (1) {
-        char c = '\0';
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
-            die("read");
-        if (iscntrl(c)) {
-            printf("%d\r\n", c);
-        } else {
-            printf("%d ('%c')\r\n", c, c);
+        editorRefreshScreen();
+        editorProcessKeypress();
         }
-        if (c == 'q') break;
-        }
+
     return EXIT_SUCCESS;
 }
