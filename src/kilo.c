@@ -38,7 +38,7 @@ struct editorConfig {
     int screenrows;
     int screencols;
     int numrows;
-    erow row;
+    erow* row;
     struct termios orig_termios;
 } E;
 
@@ -158,25 +158,33 @@ int getWindowSize (int* rows, int* cols) {
     }
 }
 
+/* row operations */
+
+void editorAppendRow(char* s, size_t len) {
+    E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+    int at = E.numrows;
+    E.row[at].size = len;
+    E.row[at].chars = malloc(len + 1);
+    memcpy(E.row[at].chars, s, len);
+    E.row[at].chars[len] = '\0';
+    E.numrows++;  
+}
+
 /* file i/o */
 
 void editorOpen(char* filename) {
-    FILE *fp = fopen(filename, "r");
+    FILE* fp = fopen(filename, "r");
     if (!fp) die("fopen");
 
     char* line = NULL;
     size_t linecap = 0;
     ssize_t linelen;
-    linelen = getline(&line, &linecap, fp);
-    if (linelen != -1) {
+    while ((linelen = getline(&line, &linecap, fp)) != -1) {
         while (linelen > 0 && (line[linelen - 1] == '\n' ||
                                line[linelen - 1] == '\r'))
             linelen--;
-        E.row.size = linelen;
-        E.row.chars = malloc(linelen + 1);
-        memcpy(E.row.chars, line, linelen);
-        E.row.chars[linelen] = '\0';
-        E.numrows = 1;  
+        editorAppendRow(line, linelen);
     }
     free(line);
     fclose(fp);
@@ -209,33 +217,31 @@ void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenrows; y++) {
         if (y >= E.numrows) {
-            if (y == E.screenrows / 3) {
-                if (E.numrows == 0 && y == E.screenrows / 3) {
-                    char welcome[80];
-                    int welcomelen = snprintf(welcome, sizeof(welcome),
-                        "Kilo editor -- version %s", PROG_VERSION);
-                    if (welcomelen > E.screencols) welcomelen = E.screencols;
-                    int padding = (E.screencols - welcomelen) / 2;
-                    if (padding) {
-                        abAppend(ab, "~", 1);
-                        padding--;
-                    }
-                    while (padding--) abAppend(ab, " ", 1);
-                    abAppend(ab, welcome, welcomelen);
-                } else {
+            if (E.numrows == 0 && y == E.screenrows / 3) {
+                char welcome[80];
+                int welcomelen = snprintf(welcome, sizeof(welcome),
+                    "Kilo editor -- version %s", PROG_VERSION);
+                if (welcomelen > E.screencols) welcomelen = E.screencols;
+                int padding = (E.screencols - welcomelen) / 2;
+                if (padding) {
                     abAppend(ab, "~", 1);
+                    padding--;
                 }
-
+                while (padding--) abAppend(ab, " ", 1);
+                abAppend(ab, welcome, welcomelen);
             } else {
-                int len = E.row.size;
-                if (len > E.screencols) len = E.screencols;
-                abAppend(ab, E.row.chars, len);
+                abAppend(ab, "~", 1);
             }
 
-            abAppend(ab, "\x1b[K", 3);
-            if (y < E.screenrows - 1) {
-                abAppend(ab, "\r\n", 2);
-            }
+        } else {
+            int len = E.row[y].size;
+            if (len > E.screencols) len = E.screencols;
+            abAppend(ab, E.row[y].chars, len);
+        }
+
+        abAppend(ab, "\x1b[K", 3);
+        if (y < E.screenrows - 1) {
+            abAppend(ab, "\r\n", 2);
         }
     }
 }
@@ -327,6 +333,7 @@ void initEditor() {
     E.cx = 0;
     E.cy = 0;
     E.numrows = 0;
+    E.row = NULL;
 
     if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
